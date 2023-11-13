@@ -6,6 +6,7 @@ use ldk_node::bitcoin::Network;
 use ldk_node::io::SqliteStore;
 use ldk_node::lightning_invoice::Invoice;
 use ldk_node::{Builder, ChannelId, Config, NetAddress, Node};
+use std::convert::TryFrom;
 use std::env;
 use std::io;
 use std::io::Write;
