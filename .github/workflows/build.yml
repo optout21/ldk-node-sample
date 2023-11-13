@@ -1,0 +1,31 @@
+name: Continuous Integration Checks
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        platform: [ ubuntu-latest, macos-latest, windows-latest ]
+        toolchain: [ stable, 1.48.0 ]
+        include:
+          - toolchain: stable
+            check-fmt: true
+        exclude:
+          - platform: macos-latest
+            toolchain: 1.48.0
+          - platform: windows-latest
+            toolchain: stable
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v3
+      - name: Install Rust ${{ matrix.toolchain }} toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile=minimal --default-toolchain ${{ matrix.toolchain }}
+          rustup override set ${{ matrix.toolchain }}
+      - name: Build on Rust ${{ matrix.toolchain }}
+        run: cargo build --verbose --color always
+      - name: Check formatting
+        if: matrix.check-fmt
+        run: rustup component add rustfmt && cargo fmt --all -- --check
