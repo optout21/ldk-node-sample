@@ -24,7 +24,6 @@ For the interactive commands, type `help`.
 
 
 ## TODO
-- Move parsing etc. utils to separate .rs
 - Proper exit
 - Add args for btc node/service
 
