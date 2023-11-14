@@ -41,6 +41,7 @@ jobs:
           cargo update -p tokio --precise "1.32.0" --verbose # tokio 1.34.0 requires socket2 0.5.5, resuiring 1.63
           cargo update -p reqwest --precise "0.11.20" --verbose # reqwest 0.11.21 broke 1.63.0 MSRV
           cargo update -p rustls --precise "0.21.7" --verbose # rustls 0.21.8 requires 1.61
+          cargo update -p memchr --precise "2.6.3" --verbose # memchr 2.6.4 requires 1.61
           #cargo update -p hashlink --precise "0.8.2" --verbose # hashlink 0.8.3 requires hashbrown 0.14, requiring 1.64.0
           #cargo update -p reqwest --precise "0.11.20" --verbose # reqwest 0.11.21 broke 1.63.0 MSRV
       - name: Build on Rust ${{ matrix.toolchain }}
