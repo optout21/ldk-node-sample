@@ -14,14 +14,14 @@ jobs:
         include:
           - toolchain: stable
             check-fmt: true
-          - platform: ubuntu-latest
+            platform: ubuntu-latest
           - toolchain: 1.63.0
             msrv: true
         exclude:
           - platform: macos-latest
             toolchain: 1.63.0
           - platform: windows-latest
-            toolchain: 1.63.0
+            toolchain: stable
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout source code
