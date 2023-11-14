@@ -7,16 +7,21 @@ jobs:
     strategy:
       matrix:
         platform: [ ubuntu-latest, macos-latest, windows-latest ]
-        toolchain: [ stable, 1.64.0 ]
+        toolchain: [
+          stable,
+          1.63.0, # Ldk-node MSRV
+        ]
         include:
           - toolchain: stable
             check-fmt: true
           - platform: ubuntu-latest
+          - toolchain: 1.63.0
+            msrv: true
         exclude:
           - platform: macos-latest
-            toolchain: 1.64.0
+            toolchain: 1.63.0
           - platform: windows-latest
-            toolchain: 1.64.0
+            toolchain: 1.63.0
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout source code
@@ -25,6 +30,15 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile=minimal --default-toolchain ${{ matrix.toolchain }}
           rustup override set ${{ matrix.toolchain }}
+      - name: Pin packages to allow for MSRV
+        if: matrix.msrv
+        run: |
+          cargo update -p hashlink --precise "0.8.2" --verbose # hashlink 0.8.3 requires hashbrown 0.14, requiring 1.64.0
+          cargo update -p proptest --precise "1.2.0" --verbose # proptest 1.3.0 requires rustc 1.64.0
+          cargo update -p reqwest --precise "0.11.20" --verbose # reqwest 0.11.21 broke 1.63.0 MSRV
+          cargo update -p regex --precise "1.9.6" --verbose # regex 1.10.0 requires rustc 1.65.0
+          cargo update -p zstd-sys --precise "2.0.8+zstd.1.5.5" --verbose # zstd-sys 2.0.9+zstd.1.5.5 requires rustc 1.64.0
+          cargo update -p petgraph --precise "0.6.3" --verbose # petgraph v0.6.4, requires rustc 1.64 or newer
       - name: Build on Rust ${{ matrix.toolchain }}
         run: cargo build --verbose --color always
       - name: Check formatting
