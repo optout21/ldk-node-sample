@@ -27,11 +27,6 @@ cargo run [<datadir>] [<listening_port>] [<network>]
 For the interactive commands, type `help`.
 
 
-## TODO
-- Proper exit
-- Add args for btc node/service
-
-
 ## License
 
 Licensed under either:
