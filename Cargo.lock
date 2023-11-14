@@ -656,6 +656,7 @@ dependencies = [
  "hex",
  "ldk-node",
  "tokio",
+ "winapi",
 ]
 
 [[package]]
