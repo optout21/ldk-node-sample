@@ -13,19 +13,19 @@ jobs:
         ]
         toolchain: [
           stable,
-          1.63.0, # Ldk-node MSRV
+          1.60.0, # Ldk-node MSRV
         ]
         include:
           - toolchain: stable
             check-fmt: true
             platform: ubuntu-latest
-          - toolchain: 1.63.0
+          - toolchain: 1.60.0
             msrv: true
         exclude:
           - platform: macos-latest
-            toolchain: 1.63.0
-#          - platform: windows-latest
-#            toolchain: stable
+            toolchain: 1.60.0
+          - platform: windows-latest
+            toolchain: stable
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout source code
@@ -37,8 +37,9 @@ jobs:
       - name: Pin packages to allow for MSRV
         if: matrix.msrv
         run: |
-          cargo update -p hashlink --precise "0.8.2" --verbose # hashlink 0.8.3 requires hashbrown 0.14, requiring 1.64.0
-          cargo update -p reqwest --precise "0.11.20" --verbose # reqwest 0.11.21 broke 1.63.0 MSRV
+          cargo update -p hashlink --precise "0.8.1" --verbose # hashlink 0.8.2 requires hashbrown 0.13, requiring 1.61.0
+          #cargo update -p hashlink --precise "0.8.2" --verbose # hashlink 0.8.3 requires hashbrown 0.14, requiring 1.64.0
+          #cargo update -p reqwest --precise "0.11.20" --verbose # reqwest 0.11.21 broke 1.63.0 MSRV
       - name: Build on Rust ${{ matrix.toolchain }}
         run: cargo build --verbose --color always
       - name: Check formatting
