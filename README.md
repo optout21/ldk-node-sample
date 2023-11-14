@@ -2,7 +2,7 @@
 Sample lightning node command-line app built on top of
 [Ldk Node](https://github.com/lightningdevkit/ldk-node)
 (similar to
-[ldk sample](https://github.com/lightningdevkit/ldk-sample)
+[ldk-sample](https://github.com/lightningdevkit/ldk-sample)
 ).
 
 
