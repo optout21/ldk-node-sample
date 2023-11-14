@@ -11,11 +11,12 @@ jobs:
         include:
           - toolchain: stable
             check-fmt: true
+          - platform: ubuntu-latest
         exclude:
           - platform: macos-latest
             toolchain: 1.64.0
           - platform: windows-latest
-            toolchain: stable
+            toolchain: 1.64.0
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout source code
