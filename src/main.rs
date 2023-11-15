@@ -407,8 +407,7 @@ fn help() {
 	println!("      nodeinfo");
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
 	let package_version = env!("CARGO_PKG_VERSION");
 	let package_name = env!("CARGO_PKG_NAME");
 	println!("App+version:  {}  v{}", package_name, package_version);
@@ -450,14 +449,20 @@ async fn main() {
 	println!("    Listen address:      \t{}", get_listen_address(&node));
 	println!("    Network:             \t{}", settings.network);
 
-	let handle = tokio::runtime::Handle::current();
+	// tokio runtime for spawning in background (event handler)
+	let runtime = tokio::runtime::Runtime::new().unwrap();
 	let node_clone = node.clone();
-	handle.spawn(async move {
+	let event_loop_handle = runtime.handle().spawn(async move {
 		handle_events(&node_clone);
 	});
 
+	// handle interactive commands
 	poll_for_user_input(&node);
+
+	event_loop_handle.abort();
 
 	node.stop().unwrap();
 	println!("Node stopped");
+
+	runtime.shutdown_timeout(std::time::Duration::from_millis(1000));
 }
