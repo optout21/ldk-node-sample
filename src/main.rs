@@ -70,8 +70,9 @@ fn list_peers(node: &Node<SqliteStore>) {
 		return;
 	}
 	println!("Peers:");
+	println!("NodeID \t| address");
 	for p in peers {
-		println!("- {} {}", p.node_id, p.address.to_string());
+		println!("- {} \t{}", p.node_id, p.address.to_string());
 	}
 }
 
@@ -82,9 +83,19 @@ fn list_channels(node: &Node<SqliteStore>) {
 		return;
 	}
 	println!("Channels:");
-	println!("NodeID | value (sats)");
+	println!(
+		"ChannelID \t| NodeID \t| ready? \t| capacity (sats) \t| balance (sats) \t| Funding TXO"
+	);
 	for ch in channels {
-		println!("- {} {}", ch.counterparty_node_id, ch.channel_value_sats);
+		println!(
+			"- id {} \tnode {} \tready {} \tcap {} \tbal {} \ttxo {:?}",
+			hex::encode(ch.channel_id.0),
+			ch.counterparty_node_id,
+			ch.is_channel_ready,
+			ch.channel_value_sats,
+			millisats_to_sats(ch.balance_msat),
+			ch.funding_txo
+		);
 	}
 }
 
@@ -156,9 +167,14 @@ fn list_payments(node: &Node<SqliteStore>) {
 		println!("No payments found");
 	} else {
 		println!("Payments:");
-		println!("amount (msats) | direction | status");
+		println!("amount (msats) \t| direction \t| status");
 		for p in &payments {
-			println!("- {}  {:?}  {:?}", p.amount_msat.unwrap_or_default(), p.direction, p.status);
+			println!(
+				"- {} \t{:?} \t{:?}",
+				p.amount_msat.unwrap_or_default(),
+				p.direction,
+				p.status
+			);
 		}
 	}
 }
@@ -184,8 +200,20 @@ fn new_onchain_address(node: &Node<SqliteStore>) {
 }
 
 fn get_balances(node: &Node<SqliteStore>) {
-	let onchain_spendable = node.spendable_onchain_balance_sats().unwrap_or_default();
-	let onchain_total = node.total_onchain_balance_sats().unwrap_or_default();
+	let onchain_spendable = match node.spendable_onchain_balance_sats() {
+		Ok(b) => b,
+		Err(e) => {
+			println!("Error: Cannot retrieve balance, {e}");
+			0
+		}
+	};
+	let onchain_total = match node.total_onchain_balance_sats() {
+		Ok(b) => b,
+		Err(e) => {
+			println!("Error: Cannot retrieve balance, {e}");
+			0
+		}
+	};
 	let channels = node.list_channels();
 	let ln_total = millisats_to_sats(channels.iter().map(|c| c.balance_msat).sum::<u64>());
 	let ln_spendable =
@@ -426,6 +454,7 @@ fn main() {
 	config.listening_address = Some(
 		NetAddress::from_str(&format!("localhost:{}", settings.ldk_peer_listening_port)).unwrap(),
 	);
+	// config.log_level = LogLevel::Debug;
 	println!(
 		"    Data dir path:       \t{}  ({})",
 		settings.ldk_storage_dir_path, config.storage_dir_path
