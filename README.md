@@ -14,14 +14,14 @@ git clone https://github.com/optout21/ldk-node-sample
 ## Usage
 ```
 cd ldk-node-sample
-cargo run [<datadir>] [<listening_port>] [<network>]
+cargo run [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet]
 ```
 
 `datadir` is a subfolder for keeping state, defaults to `datadir`
 
 `listening-port`: defaults to 9735.
 
-`network`: default is testnet, one of: testnet, mainnet, signet, regtest.
+`network`: default is testnet, one of: testnet, mainnet.
 
 
 For the interactive commands, type `help`.

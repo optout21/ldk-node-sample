@@ -17,41 +17,74 @@ use std::sync::Arc;
 
 const APP_NAME: &str = "ldk-node-sample";
 
+#[derive(Debug, Eq, PartialEq)]
 struct AppSettings {
 	ldk_storage_dir_path: String,
 	ldk_peer_listening_port: u16,
 	network: Network,
 }
 
-fn parse_startup_args() -> Result<AppSettings, ()> {
-	println!("Usage: {APP_NAME} <datadir> [<listening_port>] [<network>]");
+impl AppSettings {
+	fn default() -> Self {
+		Self {
+			ldk_storage_dir_path: "datadir".to_owned(),
+			ldk_peer_listening_port: 9735,
+			network: Network::Testnet,
+		}
+	}
+}
 
+fn parse_startup_args() -> Result<AppSettings, ()> {
+	let args: Vec<String> = env::args().collect();
+	parse_startup_args_string(&args)
+}
+
+fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
+	println!("Usage: {APP_NAME} [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet]");
+
+	let mut settings = AppSettings::default();
 	let mut arg_idx = 1;
 
-	let ldk_storage_dir_path = match env::args().skip(arg_idx).next() {
-		Some(s) => s,
-		None => "datadir".to_owned(),
+	if let Some(s) = args.get(arg_idx) {
+		settings.ldk_storage_dir_path = s.to_owned();
 	};
 	arg_idx = arg_idx + 1;
 
-	let ldk_peer_listening_port: u16 = match env::args().skip(arg_idx).next().map(|p| p.parse()) {
-		Some(Ok(p)) => p,
-		Some(Err(_)) | None => 9735,
-	};
-	arg_idx = arg_idx + 1;
-
-	let network: Network = match env::args().skip(arg_idx).next().as_ref().map(String::as_str) {
-		Some("testnet") => Network::Testnet,
-		Some("regtest") => Network::Regtest,
-		Some("signet") => Network::Signet,
-		Some("mainnet") => Network::Bitcoin,
-		Some(net) => {
-			panic!("Unsupported network provided. Options are: `regtest`, `testnet`, and `signet`. Got {}", net);
+	loop {
+		match args.get(arg_idx) {
+			None => break,
+			Some(s) => {
+				println!("s {arg_idx} {s}");
+				if *s == "--port".to_owned() {
+					arg_idx = arg_idx + 1;
+					if let Some(Ok(n)) = args.get(arg_idx).map(|s| s.parse::<u16>()) {
+						settings.ldk_peer_listening_port = n;
+					}
+				} else if *s == "--testnet".to_owned() {
+					settings.network = Network::Testnet;
+				} else if *s == "--mainnet".to_owned() {
+					settings.network = Network::Bitcoin;
+				} else if *s == "--network".to_owned() {
+					arg_idx = arg_idx + 1;
+					if let Some(ns) = args.get(arg_idx) {
+						if *ns == "testnet".to_owned() {
+							settings.network = Network::Testnet;
+						} else if *ns == "mainnet".to_owned() {
+							settings.network = Network::Bitcoin;
+						} else {
+							println!("Error: Unsupported network {ns}");
+							return Err(());
+						}
+					}
+				} else {
+					println!("Error: Unknown argument {s}, ignoring");
+				}
+				arg_idx = arg_idx + 1;
+			}
 		}
-		None => Network::Testnet,
-	};
+	}
 
-	Ok(AppSettings { ldk_storage_dir_path, ldk_peer_listening_port, network })
+	Ok(settings)
 }
 
 fn handle_events(node: &Node<SqliteStore>) {
@@ -494,4 +527,104 @@ fn main() {
 	println!("Node stopped");
 
 	runtime.shutdown_timeout(std::time::Duration::from_millis(1000));
+}
+
+#[cfg(test)]
+mod test {
+	use super::{parse_startup_args_string, AppSettings, Network};
+
+	fn build_args(args1: Vec<&str>) -> Vec<String> {
+		let mut res = vec!["executablename".to_owned()];
+		for s in args1 {
+			res.push(s.to_owned());
+		}
+		res
+	}
+
+	#[test]
+	fn test_parse_startup_args_string() {
+		assert_eq!(
+			parse_startup_args_string(&vec![]).unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "datadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Testnet
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec![])).unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "datadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Testnet
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec!["mydatadir"])).unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Testnet
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec!["mydatadir", "--port", "666"])).unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 666,
+				network: Network::Testnet
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec!["mydatadir", "--network", "testnet"]))
+				.unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Testnet
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec!["mydatadir", "--network", "mainnet"]))
+				.unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Bitcoin
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec!["mydatadir", "--testnet"])).unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Testnet
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec!["mydatadir", "--mainnet"])).unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Bitcoin
+			}
+		);
+
+		// all options
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec![
+				"mydatadir",
+				"--port",
+				"666",
+				"--network",
+				"mainnet"
+			]))
+			.unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 666,
+				network: Network::Bitcoin
+			}
+		);
+	}
 }
