@@ -45,8 +45,13 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 	let mut settings = AppSettings::default();
 	let mut arg_idx = 1;
 
-	if let Some(s) = args.get(arg_idx) {
-		settings.ldk_storage_dir_path = s.to_owned();
+	if let Some(dd) = args.get(arg_idx) {
+		// check for case when datadir option was missing,starts with '-'
+		if dd[0..1].to_owned() == "-".to_owned() {
+			println!("Error: Invalid datadir {dd}");
+			return Err(());
+		}
+		settings.ldk_storage_dir_path = dd.to_owned();
 	};
 	arg_idx = arg_idx + 1;
 
@@ -567,6 +572,8 @@ mod test {
 				network: Network::Testnet
 			}
 		);
+		assert!(parse_startup_args_string(&build_args(vec!["--port"])).is_err());
+		assert!(parse_startup_args_string(&build_args(vec!["--unsupported"])).is_err());
 		assert_eq!(
 			parse_startup_args_string(&build_args(vec!["mydatadir", "--port", "666"])).unwrap(),
 			AppSettings {
@@ -575,6 +582,7 @@ mod test {
 				network: Network::Testnet
 			}
 		);
+		assert!(parse_startup_args_string(&build_args(vec!["--port", "not a number"])).is_err());
 		assert_eq!(
 			parse_startup_args_string(&build_args(vec!["mydatadir", "--network", "testnet"]))
 				.unwrap(),
@@ -593,6 +601,12 @@ mod test {
 				network: Network::Bitcoin
 			}
 		);
+		assert!(parse_startup_args_string(&build_args(vec![
+			"mydatadir",
+			"--network",
+			"unsupported"
+		]))
+		.is_err());
 		assert_eq!(
 			parse_startup_args_string(&build_args(vec!["mydatadir", "--testnet"])).unwrap(),
 			AppSettings {

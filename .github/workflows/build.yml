@@ -41,6 +41,8 @@ jobs:
           cargo update -p reqwest --precise "0.11.20" --verbose # reqwest 0.11.21 broke 1.63.0 MSRV
       - name: Build on Rust ${{ matrix.toolchain }}
         run: cargo build --verbose --color always
+      - name: Run tests
+        run: cargo test --no-fail-fast
       - name: Check formatting
         if: matrix.check-fmt
         run: rustup component add rustfmt && cargo fmt --all -- --check
