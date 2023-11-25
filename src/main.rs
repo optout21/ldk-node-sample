@@ -5,7 +5,7 @@ use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
 use ldk_node::io::SqliteStore;
 use ldk_node::lightning_invoice::Invoice;
-use ldk_node::{Builder, ChannelId, Config, NetAddress, Node};
+use ldk_node::{Builder, ChannelId, Config, LogLevel, NetAddress, Node};
 use std::convert::TryFrom;
 use std::env;
 use std::io;
@@ -22,6 +22,11 @@ struct AppSettings {
 	ldk_storage_dir_path: String,
 	ldk_peer_listening_port: u16,
 	network: Network,
+	// Esplora base server, URL is derived from it (and network), unless esplora_url is set
+	esplora_server: String,
+	// Esplora server URL, overrides esplora_server
+	esplora_url: Option<String>,
+	log_level: Option<LogLevel>,
 }
 
 impl AppSettings {
@@ -30,6 +35,25 @@ impl AppSettings {
 			ldk_storage_dir_path: "datadir".to_owned(),
 			ldk_peer_listening_port: 9735,
 			network: Network::Testnet,
+			esplora_server: "blockstream.info".to_owned(),
+			esplora_url: None,
+			log_level: None,
+		}
+	}
+
+	fn esplora_url(&self) -> String {
+		if let Some(url) = &self.esplora_url {
+			url.clone()
+		} else {
+			format!(
+				"https://{}/{}api",
+				self.esplora_server,
+				if self.network == Network::Bitcoin {
+					"".to_owned()
+				} else {
+					format!("{}/", self.network)
+				}
+			)
 		}
 	}
 }
@@ -40,7 +64,7 @@ fn parse_startup_args() -> Result<AppSettings, ()> {
 }
 
 fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
-	println!("Usage: {APP_NAME} [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet]");
+	println!("Usage: {APP_NAME} [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet] [--esplora <esplora_url>] [--log <log_level>]");
 
 	let mut settings = AppSettings::default();
 	let mut arg_idx = 1;
@@ -79,6 +103,24 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 						} else {
 							println!("Error: Unsupported network {ns}");
 							return Err(());
+						}
+					}
+				} else if *s == "--esplora".to_owned() {
+					arg_idx = arg_idx + 1;
+					if let Some(url) = args.get(arg_idx) {
+						settings.esplora_server = "".to_owned();
+						settings.esplora_url = Some(url.to_owned());
+					}
+				} else if *s == "--log".to_owned() {
+					arg_idx = arg_idx + 1;
+					if let Some(level) = args.get(arg_idx) {
+						match level.as_str() {
+							"error" => settings.log_level = Some(LogLevel::Error),
+							"warn" => settings.log_level = Some(LogLevel::Warn),
+							"info" => settings.log_level = Some(LogLevel::Info),
+							"debug" => settings.log_level = Some(LogLevel::Debug),
+							"trace" => settings.log_level = Some(LogLevel::Trace),
+							"none" | _ => settings.log_level = None,
 						}
 					}
 				} else {
@@ -492,7 +534,9 @@ fn main() {
 	config.listening_address = Some(
 		NetAddress::from_str(&format!("localhost:{}", settings.ldk_peer_listening_port)).unwrap(),
 	);
-	// config.log_level = LogLevel::Debug;
+	if let Some(log_level) = settings.log_level {
+		config.log_level = log_level;
+	}
 	println!(
 		"    Data dir path:       \t{}  ({})",
 		settings.ldk_storage_dir_path, config.storage_dir_path
@@ -501,12 +545,14 @@ fn main() {
 	let network_string = settings.network.to_string();
 	let mut builder = Builder::from_config(config);
 	builder.set_network(settings.network);
-	let esplora_server = format!("https://blockstream.info/{network_string}/api");
-	println!("    Esplora server:      \t{}", esplora_server);
-	builder.set_esplora_server(esplora_server);
+	println!("    Esplora server:      \t{}", settings.esplora_url());
+	builder.set_esplora_server(settings.esplora_url());
 	let gossip_server = format!("https://rapidsync.lightningdevkit.org/{network_string}/snapshot");
 	println!("    Rapid gossip server: \t{}", gossip_server);
 	builder.set_gossip_source_rgs(gossip_server);
+	if let Some(log_level) = settings.log_level {
+		println!("    Log level:           \t{}", log_level);
+	}
 
 	let node = Arc::new(builder.build().unwrap());
 
@@ -536,7 +582,7 @@ fn main() {
 
 #[cfg(test)]
 mod test {
-	use super::{parse_startup_args_string, AppSettings, Network};
+	use super::{parse_startup_args_string, AppSettings, LogLevel, Network};
 
 	fn build_args(args1: Vec<&str>) -> Vec<String> {
 		let mut res = vec!["executablename".to_owned()];
@@ -553,7 +599,10 @@ mod test {
 			AppSettings {
 				ldk_storage_dir_path: "datadir".to_owned(),
 				ldk_peer_listening_port: 9735,
-				network: Network::Testnet
+				network: Network::Testnet,
+				esplora_server: "blockstream.info".to_owned(),
+				esplora_url: None,
+				log_level: None,
 			}
 		);
 		assert_eq!(
@@ -561,7 +610,10 @@ mod test {
 			AppSettings {
 				ldk_storage_dir_path: "datadir".to_owned(),
 				ldk_peer_listening_port: 9735,
-				network: Network::Testnet
+				network: Network::Testnet,
+				esplora_server: "blockstream.info".to_owned(),
+				esplora_url: None,
+				log_level: None,
 			}
 		);
 		assert_eq!(
@@ -569,7 +621,10 @@ mod test {
 			AppSettings {
 				ldk_storage_dir_path: "mydatadir".to_owned(),
 				ldk_peer_listening_port: 9735,
-				network: Network::Testnet
+				network: Network::Testnet,
+				esplora_server: "blockstream.info".to_owned(),
+				esplora_url: None,
+				log_level: None,
 			}
 		);
 		assert!(parse_startup_args_string(&build_args(vec!["--port"])).is_err());
@@ -579,7 +634,10 @@ mod test {
 			AppSettings {
 				ldk_storage_dir_path: "mydatadir".to_owned(),
 				ldk_peer_listening_port: 666,
-				network: Network::Testnet
+				network: Network::Testnet,
+				esplora_server: "blockstream.info".to_owned(),
+				esplora_url: None,
+				log_level: None,
 			}
 		);
 		assert!(parse_startup_args_string(&build_args(vec!["--port", "not a number"])).is_err());
@@ -589,7 +647,10 @@ mod test {
 			AppSettings {
 				ldk_storage_dir_path: "mydatadir".to_owned(),
 				ldk_peer_listening_port: 9735,
-				network: Network::Testnet
+				network: Network::Testnet,
+				esplora_server: "blockstream.info".to_owned(),
+				esplora_url: None,
+				log_level: None,
 			}
 		);
 		assert_eq!(
@@ -598,7 +659,10 @@ mod test {
 			AppSettings {
 				ldk_storage_dir_path: "mydatadir".to_owned(),
 				ldk_peer_listening_port: 9735,
-				network: Network::Bitcoin
+				network: Network::Bitcoin,
+				esplora_server: "blockstream.info".to_owned(),
+				esplora_url: None,
+				log_level: None,
 			}
 		);
 		assert!(parse_startup_args_string(&build_args(vec![
@@ -612,7 +676,10 @@ mod test {
 			AppSettings {
 				ldk_storage_dir_path: "mydatadir".to_owned(),
 				ldk_peer_listening_port: 9735,
-				network: Network::Testnet
+				network: Network::Testnet,
+				esplora_server: "blockstream.info".to_owned(),
+				esplora_url: None,
+				log_level: None,
 			}
 		);
 		assert_eq!(
@@ -620,7 +687,37 @@ mod test {
 			AppSettings {
 				ldk_storage_dir_path: "mydatadir".to_owned(),
 				ldk_peer_listening_port: 9735,
-				network: Network::Bitcoin
+				network: Network::Bitcoin,
+				esplora_server: "blockstream.info".to_owned(),
+				esplora_url: None,
+				log_level: None,
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec![
+				"mydatadir",
+				"--esplora",
+				"https://myesploraserver/v9/testnet/api"
+			]))
+			.unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Testnet,
+				esplora_server: "".to_owned(),
+				esplora_url: Some("https://myesploraserver/v9/testnet/api".to_owned()),
+				log_level: None,
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec!["mydatadir", "--log", "debug"])).unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Testnet,
+				esplora_server: "blockstream.info".to_owned(),
+				esplora_url: None,
+				log_level: Some(LogLevel::Debug),
 			}
 		);
 
@@ -628,16 +725,23 @@ mod test {
 		assert_eq!(
 			parse_startup_args_string(&build_args(vec![
 				"mydatadir",
+				"--log",
+				"info",
+				"--esplora",
+				"https://mempool.space/api",
+				"--network",
+				"mainnet",
 				"--port",
 				"666",
-				"--network",
-				"mainnet"
 			]))
 			.unwrap(),
 			AppSettings {
 				ldk_storage_dir_path: "mydatadir".to_owned(),
 				ldk_peer_listening_port: 666,
-				network: Network::Bitcoin
+				network: Network::Bitcoin,
+				esplora_server: "".to_owned(),
+				esplora_url: Some("https://mempool.space/api".to_owned()),
+				log_level: Some(ldk_node::LogLevel::Info),
 			}
 		);
 	}
