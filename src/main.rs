@@ -3,9 +3,11 @@ mod utils;
 use crate::utils::{millisats_to_sats, parse_peer_info};
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
-use ldk_node::io::SqliteStore;
-use ldk_node::lightning_invoice::Invoice;
-use ldk_node::{Builder, ChannelId, Config, LogLevel, NetAddress, Node};
+use ldk_node::io::sqlite_store::SqliteStore;
+use ldk_node::lightning::ln::ChannelId;
+use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::lightning_invoice::Bolt11Invoice;
+use ldk_node::{Builder, Config, LogLevel, Node};
 use std::convert::TryFrom;
 use std::env;
 use std::io;
@@ -177,7 +179,7 @@ fn list_channels(node: &Node<SqliteStore>) {
 	}
 }
 
-fn connect_peer(node: &Node<SqliteStore>, peer_pubkey: PublicKey, peer_addr: NetAddress) {
+fn connect_peer(node: &Node<SqliteStore>, peer_pubkey: PublicKey, peer_addr: SocketAddress) {
 	match node.connect(peer_pubkey, peer_addr.clone(), true) {
 		Err(e) => println!("ERROR: Could not connect to peer {} {} {}", peer_pubkey, peer_addr, e),
 		Ok(_) => println!("Connected to peer node {} {}", peer_pubkey, peer_addr),
@@ -192,14 +194,16 @@ fn disconnect_peer(node: &Node<SqliteStore>, peer_pubkey: PublicKey) {
 }
 
 fn get_listen_address(node: &Node<SqliteStore>) -> String {
-	match node.listening_address() {
-		None => "(not listening)".to_string(),
-		Some(na) => na.to_string(),
+	if let Some(addrs) = node.listening_addresses() {
+		if addrs.len() >= 1 {
+			return addrs[0].to_string();
+		}
 	}
+	"(not listening)".to_string()
 }
 
 fn open_channel(
-	node: &Node<SqliteStore>, node_id: PublicKey, peer_addr: NetAddress, chan_amt_sat: u64,
+	node: &Node<SqliteStore>, node_id: PublicKey, peer_addr: SocketAddress, chan_amt_sat: u64,
 ) {
 	// check balance
 	let current_spendable_onchain_balance_sats = node.spendable_onchain_balance_sats().unwrap_or(0);
@@ -232,7 +236,7 @@ fn close_channel(node: &Node<SqliteStore>, channel_id: &ChannelId, node_id: Publ
 	}
 }
 
-fn send_payment(node: &Node<SqliteStore>, invoice: &Invoice) {
+fn send_payment(node: &Node<SqliteStore>, invoice: &Bolt11Invoice) {
 	match node.send_payment(invoice) {
 		Err(e) => println!("ERROR: Could not send payment, {} {}", e, invoice),
 		Ok(payment_hash) => println!("Payment sent, hash {}", hex::encode(payment_hash.0)),
@@ -369,7 +373,7 @@ pub(crate) fn poll_for_user_input(node: &Node<SqliteStore>) {
 						continue;
 					}
 
-					let invoice = match Invoice::from_str(invoice_str.unwrap()) {
+					let invoice = match Bolt11Invoice::from_str(invoice_str.unwrap()) {
 						Ok(inv) => inv,
 						Err(e) => {
 							println!("ERROR: invalid invoice: {:?}", e);
@@ -529,8 +533,8 @@ fn main() {
 
 	let mut config = Config::default();
 	config.storage_dir_path = datadir.to_str().unwrap().to_string();
-	config.listening_address = Some(
-		NetAddress::from_str(&format!("localhost:{}", settings.ldk_peer_listening_port)).unwrap(),
+	config.listening_addresses = Some(
+		vec![SocketAddress::from_str(&format!("localhost:{}", settings.ldk_peer_listening_port)).unwrap()],
 	);
 	if let Some(log_level) = settings.log_level {
 		config.log_level = log_level;

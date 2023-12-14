@@ -1,7 +1,7 @@
 /// Non-core logic utils, mainly parsing.
 ///
 use ldk_node::bitcoin::secp256k1::PublicKey;
-use ldk_node::NetAddress;
+use ldk_node::lightning::ln::msgs::SocketAddress;
 use std::str::FromStr;
 
 pub(crate) fn hex_to_compressed_pubkey(hex: &str) -> Option<PublicKey> {
@@ -20,7 +20,7 @@ pub(crate) fn hex_to_compressed_pubkey(hex: &str) -> Option<PublicKey> {
 
 pub(crate) fn parse_peer_info(
 	peer_pubkey_and_ip_addr: String,
-) -> Result<(PublicKey, NetAddress), std::io::Error> {
+) -> Result<(PublicKey, SocketAddress), std::io::Error> {
 	let mut pubkey_and_addr = peer_pubkey_and_ip_addr.split("@");
 	let pubkey = pubkey_and_addr.next();
 	let peer_addr_str = pubkey_and_addr.next();
@@ -31,7 +31,7 @@ pub(crate) fn parse_peer_info(
 		));
 	}
 
-	let addr = NetAddress::from_str(peer_addr_str.unwrap());
+	let addr = SocketAddress::from_str(peer_addr_str.unwrap());
 	if addr.is_err() {
 		return Err(std::io::Error::new(
 			std::io::ErrorKind::Other,
