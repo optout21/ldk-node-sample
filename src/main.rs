@@ -4,8 +4,8 @@ use crate::utils::{millisats_to_sats, parse_peer_info};
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
 use ldk_node::io::sqlite_store::SqliteStore;
-use ldk_node::lightning::ln::ChannelId;
 use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::lightning::ln::ChannelId;
 use ldk_node::lightning_invoice::Bolt11Invoice;
 use ldk_node::{Builder, Config, LogLevel, Node};
 use std::convert::TryFrom;
@@ -533,9 +533,11 @@ fn main() {
 
 	let mut config = Config::default();
 	config.storage_dir_path = datadir.to_str().unwrap().to_string();
-	config.listening_addresses = Some(
-		vec![SocketAddress::from_str(&format!("localhost:{}", settings.ldk_peer_listening_port)).unwrap()],
-	);
+	config.listening_addresses = Some(vec![SocketAddress::from_str(&format!(
+		"localhost:{}",
+		settings.ldk_peer_listening_port
+	))
+	.unwrap()]);
 	if let Some(log_level) = settings.log_level {
 		config.log_level = log_level;
 	}
