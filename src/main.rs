@@ -250,7 +250,7 @@ fn open_channel(node: &Node, node_id: PublicKey, peer_addr: SocketAddress, chan_
 
 fn close_channel(node: &Node, channel_id: &UserChannelId, node_id: PublicKey, force: bool) {
 	match node.close_channel(channel_id, node_id, force) {
-		Err(e) => println!("Error opening channel: {e}"),
+		Err(e) => println!("Error closing channel: {e}"),
 		Ok(()) => println!("Channel closed, {} {}", channel_id.0, node_id),
 	}
 }
@@ -280,8 +280,15 @@ fn list_payments(node: &Node) {
 	}
 }
 
-fn create_invoice(node: &Node, amount_msat: u64, description: &str) {
+fn create_bolt11_invoice(node: &Node, amount_msat: u64, description: &str) {
 	match node.bolt11_payment().receive(amount_msat, description, 999999) {
+		Err(e) => println!("Error creating invoice, {e}"),
+		Ok(invoice) => println!("Invoice: {}", invoice.to_string()),
+	}
+}
+
+fn create_bolt12_offer(node: &Node, amount_msat: u64, description: &str) {
+	match node.bolt12_payment().receive(amount_msat, description) {
 		Err(e) => println!("Error creating invoice, {e}"),
 		Ok(invoice) => println!("Invoice: {}", invoice.to_string()),
 	}
@@ -417,7 +424,35 @@ pub(crate) fn poll_for_user_input(node: &Node) {
 						}
 					}
 
-					create_invoice(node, amt_msat.unwrap(), &description);
+					create_bolt11_invoice(node, amt_msat.unwrap(), &description);
+				}
+				"getoffer" => {
+					let amt_str = words.next();
+					if amt_str.is_none() {
+						println!("ERROR: getoffer requires an amount in millisatoshis");
+						continue;
+					}
+
+					let amt_msat: Result<u64, _> = amt_str.unwrap().parse();
+					if amt_msat.is_err() {
+						println!("ERROR: getoffer provided payment amount was not a number");
+						continue;
+					}
+
+					let description_first_opt = words.next();
+					if description_first_opt.is_none() {
+						println!("ERROR: getoffer requires a description");
+						continue;
+					}
+					let mut description = description_first_opt.unwrap().to_string();
+					loop {
+						match words.next() {
+							None => break,
+							Some(w) => description = description.add(&format!(" {}", w)),
+						}
+					}
+
+					create_bolt12_offer(node, amt_msat.unwrap(), &description);
 				}
 				"connectpeer" => {
 					let peer_pubkey_and_ip_addr = words.next();
@@ -505,6 +540,7 @@ fn help() {
 	println!("\n  Payments:");
 	println!("      sendpayment <invoice>                      Send a payment");
 	println!("      getinvoice <amt_msats> <description>       Get a BOLT11 invoice for receiving. Amount in millisats.");
+	println!("      getoffer <amt_msats> <description>         Get a BOLT12 offer for receiving. Amount in millisats.");
 	// println!("      keysend <dest_pubkey> <amt_msats>");
 	println!("      listpayments");
 	println!("\n  Onchain:");
