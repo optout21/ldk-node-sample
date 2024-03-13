@@ -15,7 +15,7 @@ git clone https://github.com/optout21/ldk-node-sample
 ## Usage
 ```
 cd ldk-node-sample
-cargo run [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet] [--esplora <esplora_url>] [--log <log_level>]
+cargo run [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet] [--esplora <esplora_url>] [--rgs <rgs_url>] [--log <log_level>]
 ```
 
 `datadir` is a subfolder for keeping state, defaults to `datadir`
@@ -25,6 +25,8 @@ cargo run [<datadir>] [--port <listening_port>] [--network <network>|--testnet|-
 `network`: default is testnet, one of: testnet, mainnet, signet.
 
 `esplora_url`: The URL of the Esplora server to use as chain info. Sample values: 'https://blockstream.info/testnet/api', 'https://mempool.space/api', 'https://mutinynet.com/api/'.
+
+`rgs_url`: The URL of the RGS (Rapid Gossip Server), optional. Default: 'https://rapidsync.lightningdevkit.org/{network}/snapshot'.
 
 `log_level`: Logging level, one of: none, error, warn, info, debug, trace.
 
