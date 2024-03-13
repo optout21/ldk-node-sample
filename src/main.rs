@@ -57,7 +57,7 @@ fn parse_startup_args() -> Result<AppSettings, ()> {
 }
 
 fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
-	println!("Usage: {APP_NAME} [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet] [--esplora <esplora_url>] [--log <log_level>]");
+	println!("Usage: {APP_NAME} [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet|--signet] [--esplora <esplora_url>] [--log <log_level>]");
 
 	let mut settings = AppSettings::default();
 	settings.esplora_url = "".to_owned(); // set later
@@ -78,7 +78,6 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 		match args.get(arg_idx) {
 			None => break,
 			Some(s) => {
-				println!("s {arg_idx} {s}");
 				if *s == "--port".to_owned() {
 					arg_idx = arg_idx + 1;
 					if let Some(Ok(n)) = args.get(arg_idx).map(|s| s.parse::<u16>()) {
@@ -88,6 +87,8 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 					settings.network = Network::Testnet;
 				} else if *s == "--mainnet".to_owned() {
 					settings.network = Network::Bitcoin;
+				} else if *s == "--signet".to_owned() {
+					settings.network = Network::Signet;
 				} else if *s == "--network".to_owned() {
 					arg_idx = arg_idx + 1;
 					if let Some(ns) = args.get(arg_idx) {
@@ -95,6 +96,8 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 							settings.network = Network::Testnet;
 						} else if *ns == "mainnet".to_owned() {
 							settings.network = Network::Bitcoin;
+						} else if *ns == "signet".to_owned() {
+							settings.network = Network::Signet;
 						} else {
 							println!("Error: Unsupported network {ns}");
 							return Err(());
@@ -496,7 +499,7 @@ fn help() {
 	println!("  help\tShows a list of commands.");
 	println!("  quit\tClose the application.");
 	println!("\n  Channels:");
-	println!("      openchannel pubkey@host:port <amt_sats>    Open a channel, fund it from the onchain wallet. Amount in millisats.");
+	println!("      openchannel pubkey@host:port <amt_sats>    Open a channel, fund it from the onchain wallet. Amount in sats.");
 	println!("      closechannel <channel_id> <peer_pubkey>");
 	println!("      listchannels");
 	println!("\n  Payments:");
@@ -533,6 +536,7 @@ fn main() {
 
 	let mut config = Config::default();
 	config.storage_dir_path = datadir.to_str().unwrap().to_string();
+	config.network = settings.network;
 	config.listening_addresses = Some(vec![SocketAddress::from_str(&format!(
 		"localhost:{}",
 		settings.ldk_peer_listening_port
@@ -548,7 +552,6 @@ fn main() {
 
 	let network_string = settings.network.to_string();
 	let mut builder = Builder::from_config(config);
-	builder.set_network(settings.network);
 	println!("    Esplora server:      \t{}", settings.esplora_url);
 	builder.set_esplora_server(settings.esplora_url);
 	let gossip_server = format!("https://rapidsync.lightningdevkit.org/{network_string}/snapshot");

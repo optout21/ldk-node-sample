@@ -22,9 +22,9 @@ cargo run [<datadir>] [--port <listening_port>] [--network <network>|--testnet|-
 
 `listening_port`: defaults to 9735.
 
-`network`: default is testnet, one of: testnet, mainnet.
+`network`: default is testnet, one of: testnet, mainnet, signet.
 
-`esplora_url`: The URL of the Esplora server to use as chain info. Sample values: 'https://blockstream.info/testnet/api', 'https://mempool.space/api'.
+`esplora_url`: The URL of the Esplora server to use as chain info. Sample values: 'https://blockstream.info/testnet/api', 'https://mempool.space/api', 'https://mutinynet.com/api/'.
 
 `log_level`: Logging level, one of: none, error, warn, info, debug, trace.
 
