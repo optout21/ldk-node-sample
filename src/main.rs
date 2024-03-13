@@ -26,6 +26,8 @@ struct AppSettings {
 	network: Network,
 	/// Esplora server URL
 	esplora_url: String,
+	/// RGS server URL
+	rgs_url: String,
 	log_level: Option<LogLevel>,
 }
 
@@ -33,11 +35,13 @@ const DEFAULT_ESPLORA_SERVER: &str = "blockstream.info";
 
 impl AppSettings {
 	fn default() -> Self {
+		let network = Network::Testnet;
 		Self {
 			ldk_storage_dir_path: "datadir".to_owned(),
 			ldk_peer_listening_port: 9735,
-			network: Network::Testnet,
-			esplora_url: Self::default_esplora_url(DEFAULT_ESPLORA_SERVER, Network::Testnet),
+			network,
+			esplora_url: Self::default_esplora_url(DEFAULT_ESPLORA_SERVER, network),
+			rgs_url: Self::default_rgs_url(network),
 			log_level: None,
 		}
 	}
@@ -49,6 +53,10 @@ impl AppSettings {
 			if network == Network::Bitcoin { "".to_owned() } else { format!("{}/", network) }
 		)
 	}
+
+	fn default_rgs_url(network: Network) -> String {
+		format!("https://rapidsync.lightningdevkit.org/{}/snapshot", network)
+	}
 }
 
 fn parse_startup_args() -> Result<AppSettings, ()> {
@@ -57,10 +65,11 @@ fn parse_startup_args() -> Result<AppSettings, ()> {
 }
 
 fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
-	println!("Usage: {APP_NAME} [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet] [--esplora <esplora_url>] [--log <log_level>]");
+	println!("Usage: {APP_NAME} [<datadir>] [--port <listening_port>] [--network <network>|--testnet|--mainnet|--signet] [--esplora <esplora_url>] [--rgs <rgs_url>] [--log <log_level>]");
 
 	let mut settings = AppSettings::default();
 	settings.esplora_url = "".to_owned(); // set later
+	settings.rgs_url = "".to_owned(); // set later
 
 	let mut arg_idx = 1;
 
@@ -78,7 +87,6 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 		match args.get(arg_idx) {
 			None => break,
 			Some(s) => {
-				println!("s {arg_idx} {s}");
 				if *s == "--port".to_owned() {
 					arg_idx = arg_idx + 1;
 					if let Some(Ok(n)) = args.get(arg_idx).map(|s| s.parse::<u16>()) {
@@ -88,6 +96,8 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 					settings.network = Network::Testnet;
 				} else if *s == "--mainnet".to_owned() {
 					settings.network = Network::Bitcoin;
+				} else if *s == "--signet".to_owned() {
+					settings.network = Network::Signet;
 				} else if *s == "--network".to_owned() {
 					arg_idx = arg_idx + 1;
 					if let Some(ns) = args.get(arg_idx) {
@@ -95,6 +105,8 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 							settings.network = Network::Testnet;
 						} else if *ns == "mainnet".to_owned() {
 							settings.network = Network::Bitcoin;
+						} else if *ns == "signet".to_owned() {
+							settings.network = Network::Signet;
 						} else {
 							println!("Error: Unsupported network {ns}");
 							return Err(());
@@ -104,6 +116,11 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 					arg_idx = arg_idx + 1;
 					if let Some(url) = args.get(arg_idx) {
 						settings.esplora_url = url.to_owned();
+					}
+				} else if *s == "--rgs".to_owned() {
+					arg_idx = arg_idx + 1;
+					if let Some(url) = args.get(arg_idx) {
+						settings.rgs_url = url.to_owned();
 					}
 				} else if *s == "--log".to_owned() {
 					arg_idx = arg_idx + 1;
@@ -129,6 +146,10 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 	if settings.esplora_url.len() == 0 {
 		settings.esplora_url =
 			AppSettings::default_esplora_url(DEFAULT_ESPLORA_SERVER, settings.network);
+	}
+	// fill default RGS server if needed
+	if settings.rgs_url.len() == 0 {
+		settings.rgs_url = AppSettings::default_rgs_url(settings.network);
 	}
 
 	Ok(settings)
@@ -496,7 +517,7 @@ fn help() {
 	println!("  help\tShows a list of commands.");
 	println!("  quit\tClose the application.");
 	println!("\n  Channels:");
-	println!("      openchannel pubkey@host:port <amt_sats>    Open a channel, fund it from the onchain wallet. Amount in millisats.");
+	println!("      openchannel pubkey@host:port <amt_sats>    Open a channel, fund it from the onchain wallet. Amount in sats.");
 	println!("      closechannel <channel_id> <peer_pubkey>");
 	println!("      listchannels");
 	println!("\n  Payments:");
@@ -533,6 +554,7 @@ fn main() {
 
 	let mut config = Config::default();
 	config.storage_dir_path = datadir.to_str().unwrap().to_string();
+	config.network = settings.network;
 	config.listening_addresses = Some(vec![SocketAddress::from_str(&format!(
 		"localhost:{}",
 		settings.ldk_peer_listening_port
@@ -546,14 +568,11 @@ fn main() {
 		settings.ldk_storage_dir_path, config.storage_dir_path
 	);
 
-	let network_string = settings.network.to_string();
 	let mut builder = Builder::from_config(config);
-	builder.set_network(settings.network);
 	println!("    Esplora server:      \t{}", settings.esplora_url);
 	builder.set_esplora_server(settings.esplora_url);
-	let gossip_server = format!("https://rapidsync.lightningdevkit.org/{network_string}/snapshot");
-	println!("    Rapid gossip server: \t{}", gossip_server);
-	builder.set_gossip_source_rgs(gossip_server);
+	println!("    Rapid gossip server: \t{}", settings.rgs_url);
+	builder.set_gossip_source_rgs(settings.rgs_url);
 	if let Some(log_level) = settings.log_level {
 		println!("    Log level:           \t{}", log_level);
 	}
@@ -605,6 +624,7 @@ mod test {
 				ldk_peer_listening_port: 9735,
 				network: Network::Testnet,
 				esplora_url: "https://blockstream.info/testnet/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_owned(),
 				log_level: None,
 			}
 		);
@@ -615,6 +635,7 @@ mod test {
 				ldk_peer_listening_port: 9735,
 				network: Network::Testnet,
 				esplora_url: "https://blockstream.info/testnet/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_owned(),
 				log_level: None,
 			}
 		);
@@ -625,6 +646,7 @@ mod test {
 				ldk_peer_listening_port: 9735,
 				network: Network::Testnet,
 				esplora_url: "https://blockstream.info/testnet/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_owned(),
 				log_level: None,
 			}
 		);
@@ -637,6 +659,7 @@ mod test {
 				ldk_peer_listening_port: 666,
 				network: Network::Testnet,
 				esplora_url: "https://blockstream.info/testnet/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_owned(),
 				log_level: None,
 			}
 		);
@@ -649,6 +672,7 @@ mod test {
 				ldk_peer_listening_port: 9735,
 				network: Network::Testnet,
 				esplora_url: "https://blockstream.info/testnet/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_owned(),
 				log_level: None,
 			}
 		);
@@ -660,6 +684,7 @@ mod test {
 				ldk_peer_listening_port: 9735,
 				network: Network::Bitcoin,
 				esplora_url: "https://blockstream.info/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/bitcoin/snapshot".to_owned(),
 				log_level: None,
 			}
 		);
@@ -676,6 +701,7 @@ mod test {
 				ldk_peer_listening_port: 9735,
 				network: Network::Testnet,
 				esplora_url: "https://blockstream.info/testnet/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_owned(),
 				log_level: None,
 			}
 		);
@@ -686,6 +712,7 @@ mod test {
 				ldk_peer_listening_port: 9735,
 				network: Network::Bitcoin,
 				esplora_url: "https://blockstream.info/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/bitcoin/snapshot".to_owned(),
 				log_level: None,
 			}
 		);
@@ -701,6 +728,23 @@ mod test {
 				ldk_peer_listening_port: 9735,
 				network: Network::Testnet,
 				esplora_url: "http://myesploraserver/v9/testnet/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_owned(),
+				log_level: None,
+			}
+		);
+		assert_eq!(
+			parse_startup_args_string(&build_args(vec![
+				"mydatadir",
+				"--rgs",
+				"https://myrapidsyncserver/snapshot/",
+			]))
+			.unwrap(),
+			AppSettings {
+				ldk_storage_dir_path: "mydatadir".to_owned(),
+				ldk_peer_listening_port: 9735,
+				network: Network::Testnet,
+				esplora_url: "https://blockstream.info/testnet/api".to_owned(),
+				rgs_url: "https://myrapidsyncserver/snapshot/".to_owned(),
 				log_level: None,
 			}
 		);
@@ -711,6 +755,7 @@ mod test {
 				ldk_peer_listening_port: 9735,
 				network: Network::Testnet,
 				esplora_url: "https://blockstream.info/testnet/api".to_owned(),
+				rgs_url: "https://rapidsync.lightningdevkit.org/testnet/snapshot".to_owned(),
 				log_level: Some(LogLevel::Debug),
 			}
 		);
@@ -723,6 +768,8 @@ mod test {
 				"info",
 				"--esplora",
 				"https://mempool.space/api",
+				"--rgs",
+				"https://rgs.mutinynet.com/snapshot/",
 				"--network",
 				"mainnet",
 				"--port",
@@ -734,6 +781,7 @@ mod test {
 				ldk_peer_listening_port: 666,
 				network: Network::Bitcoin,
 				esplora_url: "https://mempool.space/api".to_owned(),
+				rgs_url: "https://rgs.mutinynet.com/snapshot/".to_owned(),
 				log_level: Some(ldk_node::LogLevel::Info),
 			}
 		);
