@@ -4,6 +4,7 @@ use crate::utils::{millisats_to_sats, parse_peer_info};
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
 use ldk_node::lightning::ln::msgs::SocketAddress;
+use ldk_node::lightning::offers::offer::Offer;
 use ldk_node::lightning_invoice::Bolt11Invoice;
 use ldk_node::{Builder, Config, LogLevel, Node, UserChannelId};
 use std::env;
@@ -255,10 +256,17 @@ fn close_channel(node: &Node, channel_id: &UserChannelId, node_id: PublicKey, fo
 	}
 }
 
-fn send_payment(node: &Node, invoice: &Bolt11Invoice) {
+fn send_payment_invoice(node: &Node, invoice: &Bolt11Invoice) {
 	match node.bolt11_payment().send(invoice) {
 		Err(e) => println!("ERROR: Could not send payment, {} {}", e, invoice),
-		Ok(payment_hash) => println!("Payment sent, hash {}", hex::encode(payment_hash.0)),
+		Ok(payment_id) => println!("Invoice paid, id {}", hex::encode(payment_id.0)),
+	}
+}
+
+fn send_payment_offer(node: &Node, offer: &Offer, payer_note: Option<String>) {
+	match node.bolt12_payment().send(offer, payer_note) {
+		Err(e) => println!("ERROR: Could not pay offer, {} {}", e, offer),
+		Ok(payment_id) => println!("Offer paid, id {}", hex::encode(payment_id.0)),
 	}
 }
 
@@ -382,21 +390,35 @@ pub(crate) fn poll_for_user_input(node: &Node) {
 					open_channel(node, pubkey, peer_addr, chan_amt_sat.unwrap());
 				}
 				"sendpayment" => {
-					let invoice_str = words.next();
-					if invoice_str.is_none() {
-						println!("ERROR: sendpayment requires an invoice: `sendpayment <invoice>`");
+					let invoice_or_offer_str = words.next();
+					if invoice_or_offer_str.is_none() {
+						println!("ERROR: sendpayment requires an invoice or offer: `sendpayment {{<invoice>|<offer>}}`");
 						continue;
 					}
 
-					let invoice = match Bolt11Invoice::from_str(invoice_str.unwrap()) {
-						Ok(inv) => inv,
-						Err(e) => {
-							println!("ERROR: invalid invoice: {:?}", e);
-							continue;
+					// try as invoice
+					match Bolt11Invoice::from_str(invoice_or_offer_str.unwrap()) {
+						Ok(invoice) => {
+							send_payment_invoice(node, &invoice);
+						}
+						Err(e1) => {
+							// try as offer
+							match Offer::from_str(invoice_or_offer_str.unwrap()) {
+								Ok(offer) => {
+									send_payment_offer(node, &offer, None);
+								}
+								Err(e2) => {
+									println!(
+										"ERROR: invalid invoice/offer: {:?} {:?} {}",
+										e1,
+										e2,
+										invoice_or_offer_str.unwrap_or_default()
+									);
+									continue;
+								}
+							};
 						}
 					};
-
-					send_payment(node, &invoice);
 				}
 				"getinvoice" => {
 					let amt_str = words.next();
@@ -538,7 +560,9 @@ fn help() {
 	println!("      closechannel <channel_id> <peer_pubkey>");
 	println!("      listchannels");
 	println!("\n  Payments:");
-	println!("      sendpayment <invoice>                      Send a payment");
+	println!(
+		"      sendpayment {{<invoice>|<offer}}             Pay a BOLT11 invoice or a BOLT12 offer"
+	);
 	println!("      getinvoice <amt_msats> <description>       Get a BOLT11 invoice for receiving. Amount in millisats.");
 	println!("      getoffer <amt_msats> <description>         Get a BOLT12 offer for receiving. Amount in millisats.");
 	// println!("      keysend <dest_pubkey> <amt_msats>");
@@ -615,8 +639,9 @@ fn main() {
 
 	event_loop_handle.abort();
 
+	print!("Stopping node... ");
 	node.stop().unwrap();
-	println!("Node stopped");
+	println!("Stopped.");
 
 	runtime.shutdown_timeout(std::time::Duration::from_millis(1000));
 }
