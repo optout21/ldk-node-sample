@@ -1,9 +1,10 @@
 # ldk-node-sample
 Sample lightning node command-line app built on top of
-[Ldk Node](https://github.com/lightningdevkit/ldk-node)
-(similar to
+[LDK Node](https://github.com/lightningdevkit/ldk-node)
+(similar to how
 [ldk-sample](https://github.com/lightningdevkit/ldk-sample)
-).
+is built on top of
+[LDK](https://github.com/lightningdevkit/rust-lightning)).
 
 
 ## Installation
