@@ -2,11 +2,11 @@ mod utils;
 
 use crate::utils::{millisats_to_sats, parse_peer_info};
 use ldk_node::bitcoin::secp256k1::PublicKey;
-use ldk_node::bitcoin::Network;
 use ldk_node::io::sqlite_store::SqliteStore;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning::ln::ChannelId;
 use ldk_node::lightning_invoice::Bolt11Invoice;
+use ldk_node::Network;
 use ldk_node::{Builder, Config, LogLevel, Node};
 use std::convert::TryFrom;
 use std::env;
