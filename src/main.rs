@@ -254,6 +254,14 @@ fn close_channel(node: &Node, user_channel_id: &UserChannelId, node_id: PublicKe
 	}
 }
 
+/// #SPLICING
+fn splice_channel(node: &Node, user_channel_id: &UserChannelId, node_id: PublicKey, delta_amt_sats: i64) {
+	match node.splice_channel(user_channel_id, node_id, delta_amt_sats) {
+		Err(e) => println!("Error splicing channel: {e}"),
+		Ok(()) => println!("Channel splice initiated, {} {}", user_channel_id.0, node_id),
+	}
+}
+
 fn send_payment(node: &Node, invoice: &Bolt11Invoice) {
 	match node.bolt11_payment().send(invoice) {
 		Err(e) => println!("ERROR: Could not send payment, {} {}", e, invoice),
@@ -452,6 +460,55 @@ pub(crate) fn poll_for_user_input(node: &Node) {
 					disconnect_peer(node, peer_pubkey);
 				}
 				"listchannels" => list_channels(&node),
+				/// #SPLICING
+				"splicein" => {
+					let user_channel_id_str = match words.next() {
+						None => {
+							println!("ERROR: splicein requires a user channel ID: `splicein <user_channel_id> <peer_pubkey> <add_amt_satoshis>`");
+							continue;
+						}
+						Some(u) => u,
+					};
+					let user_channel_id_128 = match user_channel_id_str.parse() {
+						Err(_) => {
+							println!("ERROR: couldn't parse user_channel_id");
+							continue;
+						}
+						Ok(u) => u,
+					};
+					let user_channel_id = UserChannelId(user_channel_id_128);
+					let peer_pubkey_str = match words.next() {
+						None => {
+							println!("ERROR: splicein requires a peer pubkey: `splicein <user_channel_id> <peer_pubkey> <add_amt_satoshis>`");
+							continue;
+						}
+						Some(p) => p,
+					};
+					let peer_pubkey = match PublicKey::from_str(peer_pubkey_str) {
+						Err(e) => {
+							println!("ERROR: Could not parse peer pubkey {}", e.to_string());
+							continue;
+						}
+						Ok(pubkey) => pubkey,
+					};
+
+					let delta_amt_str = match words.next() {
+						None => {
+							println!("ERROR: splicein requires an additional amount: `splicein <user_channel_id> <peer_pubkey> <add_amt_satoshis>`");
+							continue;
+						}
+						Some(a) => a,
+					};
+					let delta_amt: u64 = match delta_amt_str.parse() {
+						Err(e) => {
+							println!("ERROR: Could not parse amount {}", e);
+							continue;
+						}
+						Ok(a) => a,
+					};
+
+					splice_channel(&node, &user_channel_id, peer_pubkey, delta_amt as i64);
+				}
 				"listpayments" => list_payments(&node),
 				"closechannel" => {
 					let user_channel_id_str = match words.next() {
@@ -502,6 +559,7 @@ fn help() {
 	println!("\n  Channels:");
 	println!("      openchannel pubkey@host:port <amt_sats>    Open a channel, fund it from the onchain wallet. Amount in sats.");
 	println!("      closechannel <user_channel_id> <peer_pubkey>");
+	println!("      splicein <user_channel_id> <peer_pubkey> <add_amt_satoshis>");
 	println!("      listchannels");
 	println!("\n  Payments:");
 	println!("      sendpayment <invoice>                      Send a payment");
