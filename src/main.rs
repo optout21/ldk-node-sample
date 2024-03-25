@@ -182,16 +182,17 @@ fn list_channels(node: &Node) {
 	}
 	println!("Channels:");
 	println!(
-		"ChannelID \t| NodeID \t| ready? \t| capacity (sats) \t| balance (sats) \t| Funding TXO"
+		"UserChannelID \t| ready? \t| capacity (sats) \t| out.balance (sats) \t| NodeID \t| ChannelID \t| Funding TXO"
 	);
 	for ch in channels {
 		println!(
-			"- id {} \tnode {} \tready {} \tcap {} \tbal {} \ttxo {:?}",
-			hex::encode(ch.channel_id.0),
-			ch.counterparty_node_id,
+			"- {} \t {} \t {} \t {} \t {} \t {} \t {:?}",
+			ch.user_channel_id.0,
 			ch.is_channel_ready,
 			ch.channel_value_sats,
 			millisats_to_sats(ch.outbound_capacity_msat),
+			ch.counterparty_node_id,
+			hex::encode(ch.channel_id.0),
 			ch.funding_txo
 		);
 	}
