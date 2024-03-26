@@ -221,7 +221,7 @@ fn get_listen_address(node: &Node) -> String {
 	"(not listening)".to_string()
 }
 
-fn open_channel(node: &Node, node_id: PublicKey, peer_addr: SocketAddress, chan_amt_sat: u64) {
+fn open_channel(node: &Node, node_id: PublicKey, peer_addr: SocketAddress, chan_amt_sat: u64, use_v2: bool) {
 	// check balance
 	let current_spendable_onchain_balance_sats =
 		node.list_balances().spendable_onchain_balance_sats;
@@ -237,7 +237,7 @@ fn open_channel(node: &Node, node_id: PublicKey, peer_addr: SocketAddress, chan_
 		return;
 	}
 
-	match node.connect_open_channel(node_id, peer_addr, chan_amt_sat, None, None, true) {
+	match node.connect_open_channel(node_id, peer_addr, chan_amt_sat, None, None, true, use_v2) {
 		Err(e) => println!("Error opening channel: {e}"),
 		Ok(user_channel_id) => println!(
 			"Channel opened with capacity {} and user ID {} to node {}",
@@ -250,7 +250,7 @@ fn open_channel(node: &Node, node_id: PublicKey, peer_addr: SocketAddress, chan_
 
 fn close_channel(node: &Node, user_channel_id: &UserChannelId, node_id: PublicKey) {
 	match node.close_channel(user_channel_id, node_id, false) {
-		Err(e) => println!("Error opening channel: {e}"),
+		Err(e) => println!("Error closing channel: {e}"),
 		Ok(()) => println!("Channel closed, {} {}", user_channel_id.0, node_id),
 	}
 }
@@ -380,7 +380,14 @@ pub(crate) fn poll_for_user_input(node: &Node) {
 						continue;
 					}
 
-					open_channel(node, pubkey, peer_addr, chan_amt_sat.unwrap());
+					let mut use_v2 = false;
+					while let Some(word) = words.next() {
+						if word == "--v2" {
+							use_v2 = true;
+						}
+					}
+
+					open_channel(node, pubkey, peer_addr, chan_amt_sat.unwrap(), use_v2);
 				}
 				"sendpayment" => {
 					let invoice_str = words.next();
@@ -461,7 +468,7 @@ pub(crate) fn poll_for_user_input(node: &Node) {
 					disconnect_peer(node, peer_pubkey);
 				}
 				"listchannels" => list_channels(&node),
-				/// #SPLICING
+				// #SPLICING
 				"splicein" => {
 					let user_channel_id_str = match words.next() {
 						None => {
@@ -558,7 +565,8 @@ fn help() {
 	println!("  help\tShows a list of commands.");
 	println!("  quit\tClose the application.");
 	println!("\n  Channels:");
-	println!("      openchannel pubkey@host:port <amt_sats>    Open a channel, fund it from the onchain wallet. Amount in sats.");
+	println!("      openchannel pubkey@host:port <amt_sats> [--v2] ");
+	println!("                                                 Open a channel, fund it from the onchain wallet. Amount in sats.");
 	println!("      closechannel <user_channel_id> <peer_pubkey>");
 	println!("      splicein <user_channel_id> <peer_pubkey> <add_amt_satoshis>");
 	println!("      listchannels");
