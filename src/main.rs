@@ -224,6 +224,8 @@ fn get_listen_address(node: &Node<SqliteStore>) -> String {
 
 fn open_channel(
 	node: &Node<SqliteStore>, node_id: PublicKey, peer_addr: SocketAddress, chan_amt_sat: u64,
+	#[cfg(any(dual_funding, splicing))]
+	use_v2: bool,
 ) {
 	// check balance
 	let current_spendable_onchain_balance_sats =
@@ -240,7 +242,10 @@ fn open_channel(
 		return;
 	}
 
-	match node.connect_open_channel(node_id, peer_addr, chan_amt_sat, None, None, true) {
+	match node.connect_open_channel(node_id, peer_addr, chan_amt_sat, None, None, true,
+		#[cfg(any(dual_funding, splicing))]
+		use_v2,
+	) {
 		Err(e) => println!("Error opening channel: {e}"),
 		Ok(_user_channel_id) => println!(
 			"Channel opened with capacity {} to node {}",
@@ -254,6 +259,15 @@ fn close_channel(node: &Node<SqliteStore>, user_channel_id: &UserChannelId, node
 	match node.close_channel(user_channel_id, node_id) {
 		Err(e) => println!("Error closing channel: {e}"),
 		Ok(()) => println!("Channel closed, {} {}", user_channel_id.0, node_id),
+	}
+}
+
+/// #SPLICING
+#[cfg(splicing)]
+fn splice_channel(node: &Node<SqliteStore>, user_channel_id: &UserChannelId, node_id: PublicKey, delta_amt_sats: i64) {
+	match node.splice_channel(user_channel_id, node_id, delta_amt_sats) {
+		Err(e) => println!("Error splicing channel: {e}"),
+		Ok(()) => println!("Channel splice initiated, {} {}", user_channel_id.0, node_id),
 	}
 }
 
@@ -375,7 +389,21 @@ pub(crate) fn poll_for_user_input(node: &Node<SqliteStore>) {
 						continue;
 					}
 
-					open_channel(node, pubkey, peer_addr, chan_amt_sat.unwrap());
+					#[cfg(not(any(dual_funding, splicing)))]
+					{
+						open_channel(node, pubkey, peer_addr, chan_amt_sat.unwrap());
+					}
+					#[cfg(any(dual_funding, splicing))]
+					{
+						let mut use_v2 = false;
+						while let Some(word) = words.next() {
+							if word == "--v2" {
+								use_v2 = true;
+							}
+						}
+
+						open_channel(node, pubkey, peer_addr, chan_amt_sat.unwrap(), use_v2);
+					}
 				}
 				"sendpayment" => {
 					let invoice_str = words.next();
@@ -456,6 +484,56 @@ pub(crate) fn poll_for_user_input(node: &Node<SqliteStore>) {
 					disconnect_peer(node, peer_pubkey);
 				}
 				"listchannels" => list_channels(&node),
+				// #SPLICING
+				#[cfg(splicing)]
+				"splicein" => {
+					let user_channel_id_str = match words.next() {
+						None => {
+							println!("ERROR: splicein requires a user channel ID: `splicein <user_channel_id> <peer_pubkey> <add_amt_satoshis>`");
+							continue;
+						}
+						Some(u) => u,
+					};
+					let user_channel_id_128 = match user_channel_id_str.parse() {
+						Err(_) => {
+							println!("ERROR: couldn't parse user_channel_id");
+							continue;
+						}
+						Ok(u) => u,
+					};
+					let user_channel_id = UserChannelId(user_channel_id_128);
+					let peer_pubkey_str = match words.next() {
+						None => {
+							println!("ERROR: splicein requires a peer pubkey: `splicein <user_channel_id> <peer_pubkey> <add_amt_satoshis>`");
+							continue;
+						}
+						Some(p) => p,
+					};
+					let peer_pubkey = match PublicKey::from_str(peer_pubkey_str) {
+						Err(e) => {
+							println!("ERROR: Could not parse peer pubkey {}", e.to_string());
+							continue;
+						}
+						Ok(pubkey) => pubkey,
+					};
+
+					let delta_amt_str = match words.next() {
+						None => {
+							println!("ERROR: splicein requires an additional amount: `splicein <user_channel_id> <peer_pubkey> <add_amt_satoshis>`");
+							continue;
+						}
+						Some(a) => a,
+					};
+					let delta_amt: u64 = match delta_amt_str.parse() {
+						Err(e) => {
+							println!("ERROR: Could not parse amount {}", e);
+							continue;
+						}
+						Ok(a) => a,
+					};
+
+					splice_channel(&node, &user_channel_id, peer_pubkey, delta_amt as i64);
+				}
 				"listpayments" => list_payments(&node),
 				"closechannel" => {
 					let user_channel_id_str = match words.next() {
@@ -504,9 +582,11 @@ fn help() {
 	println!("  help\tShows a list of commands.");
 	println!("  quit\tClose the application.");
 	println!("\n  Channels:");
-	println!("      openchannel pubkey@host:port <amt_sats>");
+	println!("      openchannel pubkey@host:port <amt_sats> [--v2]");
 	println!("                                                 Open a channel, fund it from the onchain wallet. Amount in sats.");
 	println!("      closechannel <user_channel_id> <peer_pubkey>");
+	#[cfg(splicing)]
+	println!("      splicein <user_channel_id> <peer_pubkey> <add_amt_satoshis>");
 	println!("      listchannels");
 	println!("\n  Payments:");
 	println!("      sendpayment <invoice>                      Send a payment");
