@@ -2,13 +2,11 @@ mod utils;
 
 use crate::utils::{millisats_to_sats, parse_peer_info};
 use ldk_node::bitcoin::secp256k1::PublicKey;
+use ldk_node::bitcoin::Network;
 use ldk_node::io::sqlite_store::SqliteStore;
 use ldk_node::lightning::ln::msgs::SocketAddress;
-use ldk_node::lightning::ln::ChannelId;
 use ldk_node::lightning_invoice::Bolt11Invoice;
-use ldk_node::Network;
-use ldk_node::{Builder, Config, LogLevel, Node};
-use std::convert::TryFrom;
+use ldk_node::{Builder, Config, LogLevel, Node, UserChannelId};
 use std::env;
 use std::io;
 use std::io::Write;
@@ -185,16 +183,17 @@ fn list_channels(node: &Node<SqliteStore>) {
 	}
 	println!("Channels:");
 	println!(
-		"ChannelID \t| NodeID \t| ready? \t| capacity (sats) \t| balance (sats) \t| Funding TXO"
+		"UserChannelID \t| ready? \t| capacity (sats) \t| out.balance (sats) \t| NodeID \t| ChannelID \t| Funding TXO"
 	);
 	for ch in channels {
 		println!(
-			"- id {} \tnode {} \tready {} \tcap {} \tbal {} \ttxo {:?}",
-			hex::encode(ch.channel_id.0),
-			ch.counterparty_node_id,
+			"- {} \t {} \t {} \t {} \t {} \t {} \t {:?}",
+			ch.user_channel_id.0,
 			ch.is_channel_ready,
 			ch.channel_value_sats,
-			millisats_to_sats(ch.balance_msat),
+			millisats_to_sats(ch.outbound_capacity_msat),
+			ch.counterparty_node_id,
+			hex::encode(ch.channel_id.0),
 			ch.funding_txo
 		);
 	}
@@ -227,7 +226,8 @@ fn open_channel(
 	node: &Node<SqliteStore>, node_id: PublicKey, peer_addr: SocketAddress, chan_amt_sat: u64,
 ) {
 	// check balance
-	let current_spendable_onchain_balance_sats = node.spendable_onchain_balance_sats().unwrap_or(0);
+	let current_spendable_onchain_balance_sats =
+		node.list_balances().spendable_onchain_balance_sats;
 	println!("balances {} {}", current_spendable_onchain_balance_sats, chan_amt_sat);
 	if chan_amt_sat > current_spendable_onchain_balance_sats {
 		println!(
@@ -242,7 +242,7 @@ fn open_channel(
 
 	match node.connect_open_channel(node_id, peer_addr, chan_amt_sat, None, None, true) {
 		Err(e) => println!("Error opening channel: {e}"),
-		Ok(()) => println!(
+		Ok(_user_channel_id) => println!(
 			"Channel opened with capacity {} to node {}",
 			chan_amt_sat,
 			node_id.to_string()
@@ -250,10 +250,10 @@ fn open_channel(
 	}
 }
 
-fn close_channel(node: &Node<SqliteStore>, channel_id: &ChannelId, node_id: PublicKey) {
-	match node.close_channel(channel_id, node_id) {
-		Err(e) => println!("Error opening channel: {e}"),
-		Ok(()) => println!("Channel closed, {} {}", hex::encode(channel_id.0), node_id),
+fn close_channel(node: &Node<SqliteStore>, user_channel_id: &UserChannelId, node_id: PublicKey) {
+	match node.close_channel(user_channel_id, node_id) {
+		Err(e) => println!("Error closing channel: {e}"),
+		Ok(()) => println!("Channel closed, {} {}", user_channel_id.0, node_id),
 	}
 }
 
@@ -303,44 +303,34 @@ fn new_onchain_address(node: &Node<SqliteStore>) {
 }
 
 fn get_balances(node: &Node<SqliteStore>) {
-	let onchain_spendable = match node.spendable_onchain_balance_sats() {
-		Ok(b) => b,
-		Err(e) => {
-			println!("Error: Cannot retrieve balance, {e}");
-			0
-		}
-	};
-	let onchain_total = match node.total_onchain_balance_sats() {
-		Ok(b) => b,
-		Err(e) => {
-			println!("Error: Cannot retrieve balance, {e}");
-			0
-		}
-	};
+	let balances = node.list_balances();
 	let channels = node.list_channels();
-	let ln_total = millisats_to_sats(channels.iter().map(|c| c.balance_msat).sum::<u64>());
+	// let ln_total = millisats_to_sats(channels.iter().map(|c| c.balance_msat).sum::<u64>());
 	let ln_spendable =
 		millisats_to_sats(channels.iter().map(|c| c.outbound_capacity_msat).sum::<u64>());
 	println!("Sat balances \t spendable \t total");
-	println!("onchain:     \t {} \t {}", onchain_spendable, onchain_total);
-	println!("lightning:   \t {} \t {}", ln_spendable, ln_total);
+	println!(
+		"onchain:     \t {} \t {}",
+		balances.spendable_onchain_balance_sats, balances.total_onchain_balance_sats
+	);
+	println!("lightning:   \t {} \t {}", ln_spendable, balances.total_lightning_balance_sats);
 	println!(
 		"total:       \t {} \t {}",
-		onchain_spendable + ln_spendable,
-		onchain_total + ln_total
+		balances.spendable_onchain_balance_sats + ln_spendable,
+		balances.total_onchain_balance_sats + balances.total_lightning_balance_sats
 	);
 }
 
 fn node_info(node: &Node<SqliteStore>) {
 	println!("Node info:");
-	println!("node pubkey:            \t{}", node.node_id());
+	println!("node pubkey:              \t{}", node.node_id());
 	let channels = node.list_channels();
-	println!("No. of channels:        \t{}", channels.len());
-	println!("No. of usable channels: \t{}", channels.iter().filter(|c| c.is_usable).count());
-	let local_balance_msat = channels.iter().map(|c| c.balance_msat).sum::<u64>();
-	println!("Local balance (msat):   \t{}", local_balance_msat);
+	println!("No. of channels:          \t{}", channels.len());
+	println!("No. of usable channels:   \t{}", channels.iter().filter(|c| c.is_usable).count());
+	let outbound_capacity_msat = channels.iter().map(|c| c.outbound_capacity_msat).sum::<u64>();
+	println!("Outbound capacity (msat): \t{}", outbound_capacity_msat);
 	let peers = node.list_peers();
-	println!("No. of peers:           \t{}", peers.len());
+	println!("No. of peers:             \t{}", peers.len());
 }
 
 pub(crate) fn poll_for_user_input(node: &Node<SqliteStore>) {
@@ -468,24 +458,21 @@ pub(crate) fn poll_for_user_input(node: &Node<SqliteStore>) {
 				"listchannels" => list_channels(&node),
 				"listpayments" => list_payments(&node),
 				"closechannel" => {
-					let channel_id_str = words.next();
-					if channel_id_str.is_none() {
-						println!("ERROR: closechannel requires a channel ID: `closechannel <channel_id> <peer_pubkey>`");
-						continue;
-					}
-					let channel_id_vec = hex::decode(channel_id_str.unwrap());
-					if channel_id_vec.is_err() || channel_id_vec.as_ref().unwrap().len() != 32 {
-						println!("ERROR: couldn't parse channel_id");
-						continue;
-					}
-					let channel_id = match <[u8; 32]>::try_from(channel_id_vec.unwrap()) {
-						Err(_) => {
-							println!("Invalid channel ID {}", channel_id_str.unwrap());
+					let user_channel_id_str = match words.next() {
+						None => {
+							println!("ERROR: closechannel requires a user channel ID: `closechannel <user_channel_id> <peer_pubkey>`");
 							continue;
 						}
-						Ok(ci) => ChannelId(ci),
+						Some(u) => u,
 					};
-
+					let user_channel_id_128 = match user_channel_id_str.parse() {
+						Err(_) => {
+							println!("ERROR: couldn't parse user_channel_id");
+							continue;
+						}
+						Ok(u) => u,
+					};
+					let user_channel_id = UserChannelId(user_channel_id_128);
 					let peer_pubkey_str = words.next();
 					if peer_pubkey_str.is_none() {
 						println!("ERROR: closechannel requires a peer pubkey: `closechannel <channel_id> <peer_pubkey>`");
@@ -499,7 +486,7 @@ pub(crate) fn poll_for_user_input(node: &Node<SqliteStore>) {
 						}
 					};
 
-					close_channel(&node, &channel_id, peer_pubkey);
+					close_channel(&node, &user_channel_id, peer_pubkey);
 				}
 				"listpeers" => list_peers(node),
 				"newonchainaddress" => new_onchain_address(node),
@@ -517,8 +504,9 @@ fn help() {
 	println!("  help\tShows a list of commands.");
 	println!("  quit\tClose the application.");
 	println!("\n  Channels:");
-	println!("      openchannel pubkey@host:port <amt_sats>    Open a channel, fund it from the onchain wallet. Amount in sats.");
-	println!("      closechannel <channel_id> <peer_pubkey>");
+	println!("      openchannel pubkey@host:port <amt_sats>");
+	println!("                                                 Open a channel, fund it from the onchain wallet. Amount in sats.");
+	println!("      closechannel <user_channel_id> <peer_pubkey>");
 	println!("      listchannels");
 	println!("\n  Payments:");
 	println!("      sendpayment <invoice>                      Send a payment");
