@@ -751,7 +751,7 @@ dependencies = [
 
 [[package]]
 name = "ldk-node-sample"
-version = "0.2.0"
+version = "0.2.0-splice"
 dependencies = [
  "dirs",
  "hex",

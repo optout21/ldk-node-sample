@@ -3,7 +3,6 @@ mod utils;
 use crate::utils::{millisats_to_sats, parse_peer_info};
 use ldk_node::bitcoin::secp256k1::PublicKey;
 use ldk_node::bitcoin::Network;
-use ldk_node::io::sqlite_store::SqliteStore;
 use ldk_node::lightning::ln::msgs::SocketAddress;
 use ldk_node::lightning_invoice::Bolt11Invoice;
 use ldk_node::{Builder, Config, LogLevel, Node, UserChannelId};
@@ -153,7 +152,7 @@ fn parse_startup_args_string(args: &Vec<String>) -> Result<AppSettings, ()> {
 	Ok(settings)
 }
 
-fn handle_events(node: &Node<SqliteStore>) {
+fn handle_events(node: &Node) {
 	loop {
 		// println!("waiting for events in the background...");
 		let event = node.wait_next_event();
@@ -162,7 +161,7 @@ fn handle_events(node: &Node<SqliteStore>) {
 	}
 }
 
-fn list_peers(node: &Node<SqliteStore>) {
+fn list_peers(node: &Node) {
 	let peers = node.list_peers();
 	if peers.is_empty() {
 		println!("No peers");
@@ -175,7 +174,7 @@ fn list_peers(node: &Node<SqliteStore>) {
 	}
 }
 
-fn list_channels(node: &Node<SqliteStore>) {
+fn list_channels(node: &Node) {
 	let channels = node.list_channels();
 	if channels.is_empty() {
 		println!("No channels");
@@ -199,21 +198,21 @@ fn list_channels(node: &Node<SqliteStore>) {
 	}
 }
 
-fn connect_peer(node: &Node<SqliteStore>, peer_pubkey: PublicKey, peer_addr: SocketAddress) {
+fn connect_peer(node: &Node, peer_pubkey: PublicKey, peer_addr: SocketAddress) {
 	match node.connect(peer_pubkey, peer_addr.clone(), true) {
 		Err(e) => println!("ERROR: Could not connect to peer {} {} {}", peer_pubkey, peer_addr, e),
 		Ok(_) => println!("Connected to peer node {} {}", peer_pubkey, peer_addr),
 	}
 }
 
-fn disconnect_peer(node: &Node<SqliteStore>, peer_pubkey: PublicKey) {
+fn disconnect_peer(node: &Node, peer_pubkey: PublicKey) {
 	match node.disconnect(peer_pubkey) {
 		Err(e) => println!("ERROR: Could not disconnect from peer {} {}", peer_pubkey, e),
 		Ok(_) => println!("Disconnected from peer node {}", peer_pubkey),
 	}
 }
 
-fn get_listen_address(node: &Node<SqliteStore>) -> String {
+fn get_listen_address(node: &Node) -> String {
 	if let Some(addrs) = node.listening_addresses() {
 		if addrs.len() >= 1 {
 			return addrs[0].to_string();
@@ -223,7 +222,7 @@ fn get_listen_address(node: &Node<SqliteStore>) -> String {
 }
 
 fn open_channel(
-	node: &Node<SqliteStore>, node_id: PublicKey, peer_addr: SocketAddress, chan_amt_sat: u64,
+	node: &Node, node_id: PublicKey, peer_addr: SocketAddress, chan_amt_sat: u64,
 	#[cfg(any(dual_funding, splicing))]
 	use_v2: bool,
 ) {
@@ -255,7 +254,7 @@ fn open_channel(
 	}
 }
 
-fn close_channel(node: &Node<SqliteStore>, user_channel_id: &UserChannelId, node_id: PublicKey) {
+fn close_channel(node: &Node, user_channel_id: &UserChannelId, node_id: PublicKey) {
 	match node.close_channel(user_channel_id, node_id) {
 		Err(e) => println!("Error closing channel: {e}"),
 		Ok(()) => println!("Channel closed, {} {}", user_channel_id.0, node_id),
@@ -264,21 +263,21 @@ fn close_channel(node: &Node<SqliteStore>, user_channel_id: &UserChannelId, node
 
 /// #SPLICING
 #[cfg(splicing)]
-fn splice_channel(node: &Node<SqliteStore>, user_channel_id: &UserChannelId, node_id: PublicKey, delta_amt_sats: i64) {
+fn splice_channel(node: &Node, user_channel_id: &UserChannelId, node_id: PublicKey, delta_amt_sats: i64) {
 	match node.splice_channel(user_channel_id, node_id, delta_amt_sats) {
 		Err(e) => println!("Error splicing channel: {e}"),
 		Ok(()) => println!("Channel splice initiated, {} {}", user_channel_id.0, node_id),
 	}
 }
 
-fn send_payment(node: &Node<SqliteStore>, invoice: &Bolt11Invoice) {
+fn send_payment(node: &Node, invoice: &Bolt11Invoice) {
 	match node.send_payment(invoice) {
 		Err(e) => println!("ERROR: Could not send payment, {} {}", e, invoice),
 		Ok(payment_hash) => println!("Payment sent, hash {}", hex::encode(payment_hash.0)),
 	}
 }
 
-fn list_payments(node: &Node<SqliteStore>) {
+fn list_payments(node: &Node) {
 	let payments = node.list_payments();
 	if payments.len() == 0 {
 		println!("No payments found");
@@ -296,14 +295,14 @@ fn list_payments(node: &Node<SqliteStore>) {
 	}
 }
 
-fn create_invoice(node: &Node<SqliteStore>, amount_msat: u64, description: &str) {
+fn create_invoice(node: &Node, amount_msat: u64, description: &str) {
 	match node.receive_payment(amount_msat, description, 999999) {
 		Err(e) => println!("Error creating invoice, {e}"),
 		Ok(invoice) => println!("Invoice: {}", invoice.to_string()),
 	}
 }
 
-fn new_onchain_address(node: &Node<SqliteStore>) {
+fn new_onchain_address(node: &Node) {
 	match node.new_onchain_address() {
 		Err(e) => println!("Error: {}", e),
 		Ok(a) => {
@@ -316,7 +315,7 @@ fn new_onchain_address(node: &Node<SqliteStore>) {
 	}
 }
 
-fn get_balances(node: &Node<SqliteStore>) {
+fn get_balances(node: &Node) {
 	let balances = node.list_balances();
 	let channels = node.list_channels();
 	// let ln_total = millisats_to_sats(channels.iter().map(|c| c.balance_msat).sum::<u64>());
@@ -335,7 +334,7 @@ fn get_balances(node: &Node<SqliteStore>) {
 	);
 }
 
-fn node_info(node: &Node<SqliteStore>) {
+fn node_info(node: &Node) {
 	println!("Node info:");
 	println!("node pubkey:              \t{}", node.node_id());
 	let channels = node.list_channels();
@@ -347,7 +346,7 @@ fn node_info(node: &Node<SqliteStore>) {
 	println!("No. of peers:             \t{}", peers.len());
 }
 
-pub(crate) fn poll_for_user_input(node: &Node<SqliteStore>) {
+pub(crate) fn poll_for_user_input(node: &Node) {
 	println!("Enter \"help\" to view available commands. Press Ctrl-D to quit.");
 	loop {
 		print!("> ");
